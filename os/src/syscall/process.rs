@@ -2,8 +2,13 @@
 use crate::{
     config::MAX_SYSCALL_NUM,
     task::{
-        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next, TaskStatus,
+        change_program_brk, exit_current_and_run_next, suspend_current_and_run_next,
+        task_start_time,current_user_token,get_syscall_times,
+        mmap,munmap,
+        TaskStatus,
     },
+    timer::{get_time_us},
+    mm::{translated_ptr,VirtAddr},
 };
 
 #[repr(C)]
@@ -43,27 +48,67 @@ pub fn sys_yield() -> isize {
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    let us = get_time_us();
+    let _ts_phy_ptr:*mut TimeVal = translated_ptr(
+        current_user_token(), 
+        _ts);
+    unsafe {
+        *_ts_phy_ptr = TimeVal {
+            sec: us / 1_000_000,
+            usec: us % 1_000_000,
+        };
+    }
+    0
 }
 
 /// YOUR JOB: Finish sys_task_info to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TaskInfo`] is splitted by two pages ?
 pub fn sys_task_info(_ti: *mut TaskInfo) -> isize {
-    trace!("kernel: sys_task_info NOT IMPLEMENTED YET!");
-    -1
+    trace!("kernel: sys_task_info");
+    let _ti_phy_ptr: *mut TaskInfo = translated_ptr(
+        current_user_token(), 
+        _ti);
+    unsafe{
+        *_ti_phy_ptr = TaskInfo {
+            status: TaskStatus::Running,
+            time:(get_time_us()-task_start_time()) /1000,
+            syscall_times:get_syscall_times(),
+        };
+    }
+    return 0;
 }
 
 // YOUR JOB: Implement mmap.
+/// 构建键值对放到memoryset中，每个TaskControlBlock会有一个memoryset，
+/// 所以可以在TaskManager中新增加一个函数用于操作memoryset,
 pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    -1
+    trace!("kernel: sys_mmap"); 
+    if _port & !0x7 !=0 || _port & 0b0000_0111 == 0 { 
+        debug!("error _port:{:#x}",_port);
+        return -1;
+    }
+    if !VirtAddr(_start).aligned() {
+        debug!("error _start: {:#x}",_start);
+        return -1;
+    }
+    if _len == 0 {
+        return 0;
+    }
+    mmap(_start,_len,_port)
 }
 
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    -1
+    trace!("kernel: sys_munmap");
+    if !VirtAddr(_start).aligned() {
+        debug!("error _start");
+        return -1;
+    }
+    if _len == 0 {
+        return 0;
+    }
+    munmap(_start,_len)
 }
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {

@@ -1,6 +1,6 @@
 //! Implementation of [`PageTableEntry`] and [`PageTable`].
 
-use super::{frame_alloc, FrameTracker, PhysPageNum, StepByOne, VirtAddr, VirtPageNum};
+use super::{frame_alloc, FrameTracker, PhysPageNum, PhysAddr, StepByOne, VirtAddr, VirtPageNum};
 use alloc::vec;
 use alloc::vec::Vec;
 use bitflags::*;
@@ -170,4 +170,20 @@ pub fn translated_byte_buffer(token: usize, ptr: *const u8, len: usize) -> Vec<&
         start = end_va.into();
     }
     v
+}
+
+/// Translate&Copy a ptr[u8] array with LENGTH len to a mutable u8 Vec through page table
+pub fn translated_ptr<T>(token: usize, ptr: *mut T) -> *mut T {
+    let page_table = PageTable::from_token(token);
+    let start_va = VirtAddr::from(ptr as usize);
+    let vpn = start_va.floor();
+    let ppn:PhysAddr = page_table.translate(vpn).unwrap().ppn().into();
+    let offset = start_va.page_offset();
+        // if end_va.page_offset() == 0 {
+        //     v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..]);
+        // } else {
+        //     v.push(&mut ppn.get_bytes_array()[start_va.page_offset()..end_va.page_offset()]);
+        // }
+    let result:*mut T= (ppn.0+offset) as *mut T;
+    result
 }
